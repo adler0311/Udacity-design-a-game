@@ -10,16 +10,31 @@ import endpoints
 from protorpc import remote, messages
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
-
-from models import User, Game, Score
-from models import StringMessage, NewGameForm, GameForm, MakeMoveForm,\
-    ScoreForms, GameForms, RankingForm, RankingForms, HistoryForm, UserGamesForms
 from utils import get_by_urlsafe
 
+from models import (
+  User,
+  Game,
+  Score,
+)
+
+from models import (
+  StringMessage,
+  NewGameForm,
+  GameForm,
+  MakeMoveForm,
+  ScoreForms,
+  GameForms,
+  RankingForm,
+  RankingForms,
+  HistoryForm,
+  UserGamesForms
+)
+
+GET_URLSAFE_GAME_KEY_REQUEST = endpoints.ResourceContainer(
+  urlsafe_game_key=messages.StringField(1))
 NEW_GAME_REQUEST = endpoints.ResourceContainer(NewGameForm,
         urlsafe_game_key=messages.StringField(1))
-GET_GAME_REQUEST = endpoints.ResourceContainer(
-        urlsafe_game_key=messages.StringField(1),)
 MAKE_MOVE_REQUEST = endpoints.ResourceContainer(
     MakeMoveForm,
     urlsafe_game_key=messages.StringField(1),)
@@ -27,8 +42,6 @@ USER_REQUEST = endpoints.ResourceContainer(user_name=messages.StringField(1),
                                            email=messages.StringField(2))
 GET_HIGH_SCORES_REQUEST = endpoints.ResourceContainer(
     number_of_results=messages.IntegerField(1))
-GET_GAME_HISTORY_REQUEST = endpoints.ResourceContainer(
-        urlsafe_game_key=messages.StringField(1))
 
 MEMCACHE_MOVES_REMAINING = 'MOVES_REMAINING'
 
@@ -69,7 +82,7 @@ class HangmanApi(remote.Service):
         taskqueue.add(url='/tasks/cache_average_attempts')
         return game.to_form('Good luck playing Hangman!')
 
-    @endpoints.method(request_message=GET_GAME_REQUEST,
+    @endpoints.method(request_message=GET_URLSAFE_GAME_KEY_REQUEST,
                       response_message=GameForm,
                       path='game/{urlsafe_game_key}',
                       name='get_game',
@@ -92,36 +105,52 @@ class HangmanApi(remote.Service):
 
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
         if game.game_over:
-            return game.to_form('Game already over!')
+          raise endpoints.ForbiddenException('Illegal action: Game is already over.')
 
         # Guessing the letter 
-        letter = request.guess
-        if letter in game.secret_word and letter not in game.guessed_letters:
-          game.guessed_letters.append(letter)
-          msg = ('Correct! Still ')
+        if request.guess.isalpha() and not "":
+          letter = request.guess
 
-        elif letter not in game.secret_word and letter not in game.missed_letters:
-          game.missed_letters.append(letter)
-          msg = ('That\'s too bad! Incorrect!')
-          game.attempts_remaining -= 1
-
-        elif letter in game.guessed_letters or letter in game.missed_letters:
-          msg = ('You\'ve already tried this letter!')
-          game.attempts_remaining -= 1
-
-        game.cracked_word = ""
-        for letter in game.secret_word:
-          if letter not in game.guessed_letters:
-            game.cracked_word+='_'
+          if len(letter) != len(game.secret_word) and len(letter) != 1:
+            msg = ("Wrong. you failed to guess whole word or just guess letter one by one.")
+            game.attempts_remaining -= 1
           else:
-            game.cracked_word+=letter
-        
-        if '_' not in game.cracked_word:
-          msg = ('You Win! You correct the word!')
-          game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
-          game.end_game(True)
-          return game.to_form(msg)
-        
+            if letter == game.secret_word:
+              msg = ('Wow. You just guessed entire word. You Win!')
+              game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
+              game.cracked_word = game.secret_word
+              game.end_game(True)
+              return game.to_form(msg)
+            else:
+              if letter in game.secret_word and letter not in game.guessed_letters:
+                game.guessed_letters.append(letter)
+                msg = ('Correct! Still ')
+
+              elif letter not in game.secret_word and letter not in game.missed_letters:
+                game.missed_letters.append(letter)
+                msg = ('That\'s too bad! Incorrect!')
+                game.attempts_remaining -= 1
+
+              elif letter in game.guessed_letters or letter in game.missed_letters:
+                msg = ('You\'ve already tried this letter!')
+                game.attempts_remaining -= 1
+
+              game.cracked_word = ""
+              for letter in game.secret_word:
+                if letter not in game.guessed_letters:
+                  game.cracked_word+='_'
+                else:
+                  game.cracked_word+=letter
+              
+              if '_' not in game.cracked_word:
+                msg = ('You Win! You correct the word!')
+                game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
+                game.end_game(True)
+                return game.to_form(msg)
+              
+        else:
+          game.to_form('You have to put alphanumeric letter!')
+
         if game.attempts_remaining < 1:
           msg = (msg + ' Game over!')
           game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
@@ -197,11 +226,11 @@ class HangmanApi(remote.Service):
 
 
 
-    @endpoints.method(request_message=GET_GAME_REQUEST,
+    @endpoints.method(request_message=GET_URLSAFE_GAME_KEY_REQUEST,
                       response_message=StringMessage,
                       path='games/cancel',
                       name='cancel_game',
-                      http_method='GET')
+                      http_method='DELETE')
     def cancel_game(self, request):
       game = get_by_urlsafe(request.urlsafe_game_key, Game)
       if game.game_over == True:
@@ -231,25 +260,18 @@ class HangmanApi(remote.Service):
       # get ratio and save to each user. 
       users = User.query()
       for user in users:
-        wons = 0
-        loss = 0
         scores = Score.query(Score.user == user.key).fetch()
         if scores:
           for score in scores:
             if score.won == True:
-              wons += 1
+              user.wons += 1
             else:
-              loss += 1
-
-        if wons==0 and loss==0:
-          user.ratio = 0
-        else:
-          user.ratio = float(wons)/(loss+wons)
+              user.losts += 1
         user.put()
 
-      r = RankingForms(items = [user.to_rankingform() for user in User.query()])
+      return RankingForms(items = [user.to_rankingform() for user in User.query()])
 
-    @endpoints.method(request_message=GET_GAME_HISTORY_REQUEST,
+    @endpoints.method(request_message=GET_URLSAFE_GAME_KEY_REQUEST,
                       response_message=HistoryForm,
                       path='games/history',
                       name='get_game_history')

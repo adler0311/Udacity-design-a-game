@@ -20,7 +20,7 @@ class SendReminderEmail(webapp2.RequestHandler):
         users = User.query(User.email != None)
         for user in users:
             games = Game.query(Game.user == user.key)
-            games = games.filter(Game.game_over == False)
+            games = games.filter(Game.game_over == False).fetch()
             if games:
                 subject = 'You have incomplete games!'
                 body = 'Hello {}, try out Hangman!'.format(user.name)

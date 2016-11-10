@@ -9,15 +9,15 @@ from google.appengine.ext import ndb
 from board import board
 from words import words
 
-
 class User(ndb.Model):
     """User profile"""
     name = ndb.StringProperty(required=True)
     email =ndb.StringProperty()
-    ratio = ndb.FloatProperty(required=True, default=0)
-    user_games = ndb.TextProperty(required=True, default="")
-    
-
+    wons = ndb.IntegerProperty(required=True, default=0)
+    losts = ndb.IntegerProperty(required=True, default=0)
+    ratio = ndb.ComputedProperty(lambda self: float(0) if self.wons ==0 and\
+             self.losts==0 else float(self.wons)/(self.wons+self.losts) )
+    user_games = ndb.TextProperty(required=True, default="")   
 
     def to_usergamesform(self):
         form = UserGamesForm()
@@ -29,7 +29,6 @@ class User(ndb.Model):
         form.user_name=self.name
         form.ratio = self.ratio
         return form
-
 
 class Game(ndb.Model):
     """Game object"""
@@ -83,8 +82,6 @@ class Game(ndb.Model):
         return form
 
 
-
-
 class Score(ndb.Model):
     """Score object"""
     user = ndb.KeyProperty(required=True, kind='User')
@@ -96,7 +93,6 @@ class Score(ndb.Model):
     def to_form(self):
         return ScoreForm(user_name=self.user.get().name, won=self.won,
                          date=str(self.date), points=self.points)
-
 
 
 class GameForm(messages.Message):
@@ -161,5 +157,3 @@ class RankingForms(messages.Message):
 class HistoryForm(messages.Message):
     """return historyform"""
     moves = messages.StringField(1, repeated=True)
-
-

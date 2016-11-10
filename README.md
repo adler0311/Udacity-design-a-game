@@ -24,23 +24,22 @@ guess the word, than your score is 0.
  - utils.py: Helper function for retrieving ndb.Models by urlsafe Key string.
 
 ##Endpoints Included:
- - **create_usser**
+ - **create_user**
     - Path: 'user'
     - Method: POST
     - Parameters: user_name, email (optional)
     - Returns: Message confirming creation of the User.
-    - Description: Creates a new User. user_name provided must be unique. Will 
-    raise a ConflictException if a User with that user_name already exists.
+    - Description: Creates a new User. user_name provided must be unique. 
+    If the user_name exist, there would be an ConflictException error.
     
  - **new_game**
     - Path: 'game'
     - Method: POST
-    - Parameters: user_name, min, max, attempts
+    - Parameters: user_name, urlsafe_game_key
     - Returns: GameForm with initial game state.
-    - Description: Creates a new Game. user_name provided must correspond to an
-    existing user - will raise a NotFoundException if not. Min must be less than
-    max. Also adds a task to a task queue to update the average moves remaining
-    for active games.
+    - Description: Creates a new Game. Input parameter is user_name and it
+    should exist alrealdy or raise an error. take queue also functions to udate
+    average moves remaining for active games.
      
  - **get_game**
     - Path: 'game/{urlsafe_game_key}'
@@ -72,7 +71,7 @@ guess the word, than your score is 0.
     - Description: Returns all Scores recorded by the provided player (unordered).
     Will raise a NotFoundException if the User does not exist.
     
- - **get_average_attemps**
+ - **get_average_attemps_remaining**
     - Path: 'games/average_attemps'
     - Method: GET
     - Parameters: None
@@ -89,7 +88,7 @@ guess the word, than your score is 0.
 
  - **cancel_game**
     - Path: 'games/cancel'
-    - Method: GET
+    - Method: DELETE
     - Parameters: urlsafe_game_key
     - Returns: StringMessage
     - Description: input the urlsafe_game_key and cancel the active game. 
@@ -119,17 +118,12 @@ guess the word, than your score is 0.
     - Returns: HistroyForm
     - Description: input urlsafe_game_key and get the history of the game.
     History includes guessed letter, cracked_letter.
+    
+##Cron job:
+ - **SendReminderEmail**
+    - get email of users, if exist, and filtering which game is not over,
+    and send email to users to alert that the incompleted game.
 
-##Models Included:
- - **User**
-    - Stores unique user_name and (optional) email address.
-    
- - **Game**
-    - Stores unique game states. Associated with User model via KeyProperty.
-    
- - **Score**
-    - Records completed games. Associated with Users model via KeyProperty.
-    
 ##Forms Included:
  - **GameForm**
     - Representation of a Game's state (urlsafe_key, attempts_remaining,
