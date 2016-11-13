@@ -58,6 +58,9 @@ class HangmanApi(remote.Service):
         if User.query(User.name == request.user_name).get():
             raise endpoints.ConflictException(
                     'A User with that name already exists!')
+        if request.user_name == "":
+            raise endpoints.ConflictException(
+                    'You have to input username, not blank.')
         user = User(name=request.user_name, email=request.email)
         user.put()
         return StringMessage(message='User {} created!'.format(
@@ -104,62 +107,66 @@ class HangmanApi(remote.Service):
         """Makes a move. Returns a game state with message"""
 
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
-        if game.game_over:
-          raise endpoints.ForbiddenException('Illegal action: Game is already over.')
+        if game:
+          if game.game_over:
+            raise endpoints.ForbiddenException('Illegal action: Game is already over.')
 
-        # Guessing the letter 
-        if request.guess.isalpha() and not "":
-          letter = request.guess
+          # Guessing the letter 
+          if request.guess.isalpha() and not "":
+            letter = request.guess
 
-          if len(letter) != len(game.secret_word) and len(letter) != 1:
-            msg = ("Wrong. you failed to guess whole word or just guess letter one by one.")
-            game.attempts_remaining -= 1
-          else:
-            if letter == game.secret_word:
-              msg = ('Wow. You just guessed entire word. You Win!')
-              game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
-              game.cracked_word = game.secret_word
-              game.end_game(True)
-              return game.to_form(msg)
+            if len(letter) != len(game.secret_word) and len(letter) != 1:
+              msg = ("Wrong. you failed to guess whole word or just guess letter one by one.")
+              game.attempts_remaining -= 1
             else:
-              if letter in game.secret_word and letter not in game.guessed_letters:
-                game.guessed_letters.append(letter)
-                msg = ('Correct! Still ')
-
-              elif letter not in game.secret_word and letter not in game.missed_letters:
-                game.missed_letters.append(letter)
-                msg = ('That\'s too bad! Incorrect!')
-                game.attempts_remaining -= 1
-
-              elif letter in game.guessed_letters or letter in game.missed_letters:
-                msg = ('You\'ve already tried this letter!')
-                game.attempts_remaining -= 1
-
-              game.cracked_word = ""
-              for letter in game.secret_word:
-                if letter not in game.guessed_letters:
-                  game.cracked_word+='_'
-                else:
-                  game.cracked_word+=letter
-              
-              if '_' not in game.cracked_word:
-                msg = ('You Win! You correct the word!')
+              if letter == game.secret_word:
+                msg = ('Wow. You just guessed entire word. You Win!')
                 game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
+                game.cracked_word = game.secret_word
                 game.end_game(True)
                 return game.to_form(msg)
-              
-        else:
-          game.to_form('You have to put alphanumeric letter!')
+              else:
+                if letter in game.secret_word and letter not in game.guessed_letters:
+                  game.guessed_letters.append(letter)
+                  msg = ('Correct! Still ')
 
-        if game.attempts_remaining < 1:
-          msg = (msg + ' Game over!')
-          game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
-          game.end_game(False)
-          return game.to_form(msg)
+                elif letter not in game.secret_word and letter not in game.missed_letters:
+                  game.missed_letters.append(letter)
+                  msg = ('That\'s too bad! Incorrect!')
+                  game.attempts_remaining -= 1
+
+                elif letter in game.guessed_letters or letter in game.missed_letters:
+                  msg = ('You\'ve already tried this letter!')
+                  game.attempts_remaining -= 1
+
+                game.cracked_word = ""
+                for letter in game.secret_word:
+                  if letter not in game.guessed_letters:
+                    game.cracked_word+='_'
+                  else:
+                    game.cracked_word+=letter
+                
+                if '_' not in game.cracked_word:
+                  msg = ('You Win! You correct the word!')
+                  game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
+                  game.end_game(True)
+                  return game.to_form(msg)
+                
+          else:
+            game.to_form('You have to put alphanumeric letter!')
+
+          if game.attempts_remaining < 1:
+            msg = (msg + ' Game over!')
+            game.moves.append("(guess: %s, result: %s)" % (request.guess, msg))
+            game.end_game(False)
+            return game.to_form(msg)
+          else:
+            game.moves.append("(guess: %s, result: %s)" % (request.guess, game.cracked_word))
+            game.put()
+            return game.to_form(msg + ' %sremains' %(game.attempts_remaining))
         else:
-          game.moves.append("(guess: %s, result: %s)" % (request.guess, game.cracked_word))
-          game.put()
-          return game.to_form(msg + ' %sremains' %(game.attempts_remaining))
+          raise endpoints.ConflictException('Thie game is not exist')
+
 
 
 
@@ -233,13 +240,17 @@ class HangmanApi(remote.Service):
                       http_method='DELETE')
     def cancel_game(self, request):
       game = get_by_urlsafe(request.urlsafe_game_key, Game)
-      if game.game_over == True:
-        msg=("You can't cancel this game!")
-      else:
-        game.key.delete()
-        msg=("You just canceled this game!")
+      if game:
+        if game.game_over == True:
+          msg=("You can't cancel this game!")
+        else:
+          game.key.delete()
+          msg=("You just canceled this game!")
 
-      return StringMessage(message=msg)
+        return StringMessage(message=msg)
+      else:
+        raise endpoints.ConflictException('Thie game is not exist')
+
 
 
     @endpoints.method(request_message=GET_HIGH_SCORES_REQUEST,
@@ -278,6 +289,9 @@ class HangmanApi(remote.Service):
     def get_game_history(self, request):
       game = get_by_urlsafe(request.urlsafe_game_key, Game)
 
-      return game.to_historyform()
+      if game:
+        return game.to_historyform()
+      else:
+        raise endpoints.ConflictException('Thie game is not exist')
 
 api = endpoints.api_server([HangmanApi])
